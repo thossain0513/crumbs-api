@@ -1,0 +1,27 @@
+[tool.poetry]
+name = "src"
+version = "0.1.0"
+description = ""
+authors = ["thoss0513 <thoss0513@berkeley.edu>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.111.0"
+uvicorn = "^0.29.0"
+langchain-community = "^0.2.0"
+replicate = "^0.26.0"
+langchain = "^0.2.0"
+pydantic = "^2.7.1"
+openai-whisper = "20231117"
+torch="2.2.2"
+tritonclient = "^2.45.0"
+
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.2.1"
+pytest-asyncio = "^0.23.7"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
