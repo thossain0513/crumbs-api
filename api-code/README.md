@@ -39,11 +39,11 @@ Poetry to your PATH.
 
 1. **Clone the Repository:**
    ```bash
-   git clone https://github.com/UCB-W255/lab1-containerizing-a-basic-api-ashoksun01.git
-
+   git clone https://github.com/thossain0513/crumbs-api.git
+ 
 2. **Navigate to Project Directory:**
    ```bash
-   cd lab1-containerizing-a-basic-api-ashoksun01/lab1
+   cd api-code
 
 3. **Install Project Dependencies:**
    ```bash
@@ -75,10 +75,10 @@ by following the instructions at [Docker Installation Guide](https://docs.docker
 
 1. **Clone the Repository:**
    ```bash
-   git clone https://github.com/UCB-W255/lab1-containerizing-a-basic-api-ashoksun01.git
+   git clone https://github.com/thossain0513/crumbs-api.git
 2. **Navigate to Project Directory:**
    ```bash
-   cd lab1-containerizing-a-basic-api-ashoksun01/lab1
+   cd api-code
 3. **Build Docker Image:**
    ```bash
    docker build -t <docker-image> .
