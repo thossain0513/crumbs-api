@@ -6,7 +6,8 @@ This project is a FastAPI application that uses Poetry to manage project depende
 test its functionalities, and is containerized with Docker to provide the following endpoints:
 
 - `/generate-recipe`: A POST endpoint returning recipe information in a JSON format.
-- `/transcribe-audio`: A POST endpoint that takes a query parameter `audio` and returns a JSON message with a string input of the .
+- `/transcribe-audio`: A POST endpoint that takes a query parameter `audio` and returns a JSON message with a string input of the transcription.
+- `/generate_image`: A POST endpoint that uses the [Replicate](https://replicate.com/stability-ai/stable-diffusion) image generation API to generate recipe images for the Crumbs App.
 - `/`: A root endpoint that returns a “Not Found” response.
 - `/docs`: An endpoint that provides a browsable documentation while the API is running.
 - `/openapi.json`: Returns a JSON object that meets the OpenAPI specification version 3+.
