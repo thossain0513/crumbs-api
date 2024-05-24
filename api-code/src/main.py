@@ -17,6 +17,7 @@ import uvicorn
 
 app = FastAPI()
 model_name = "meta/meta-llama-3-70b-instruct"
+image_model = "stability-ai/stable-diffusion:ac732df83cea7fff18b8472768c88ad041fa750ff7682a21affe81863cbe77e4"
 os.environ["REPLICATE_API_TOKEN"] = "r8_dzkkqN96nqOQC7YhTNJ2gUam62Cu38z4aMu9S"
 
 # Load your Whisper model (ensure the model is loaded outside the request scope to save resources)
@@ -208,18 +209,18 @@ async def fixer_agent(request: FixRequest):
     return FixResponse(result=result, counter=request.counter + 1)
 
 @app.post("/generate_image")
-async def generate_image(prompt):
-    api_url = "https://visioncraft.top"
-    api_key = "bb3db669-c19d-4770-a333-ca184416ad50"
-    data = {
-        "model": 'ExtraRealisticXL-v1',
-        "prompt": prompt,
-        "token": api_key
+async def generate_image(request: ImageRequest):
+    prompt = f"{request.recipeName}: {request.recipeDescription}"
+    input = {
+    "prompt": prompt,
+    "scheduler": "K_EULER"
     }
-    async with aiohttp.ClientSession() as session:
-        async with session.post(f"{api_url}/sd", json=data) as response:
-            image = await response.read()
-            return image
+
+    output = replicate.run(
+        image_model,
+        input=input
+    )
+    return output
         
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
