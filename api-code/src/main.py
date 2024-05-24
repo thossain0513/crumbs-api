@@ -1,5 +1,5 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 import whisper
 import os
 import replicate
@@ -8,6 +8,10 @@ import json
 from langchain_community.llms import Replicate
 import shutil
 from pydantic import BaseModel
+import aiohttp
+import asyncio
+import io
+
 
 
 app = FastAPI()
@@ -27,7 +31,7 @@ system_prompt = """
         You will only recommend recipes strictly in this following format with no inconsistencies so that a python function can properly parse it as a dictionary:
         
         { "name": "Name of the Recipe" (Python String),
-         "ingredients": ["ingredient", "ingredient"] (a list of strings),  
+         "ingredients": ["ingredient", "ingredient"] (a list of strings with their quantities),  
         "description": "A brief description, incorporating the listed ingredients with their quantities" (a string), 
         "instructions": ["Step 1: Description with Quantity of Used Ingredient 1", "Step 2: Description with Quantity of Used Ingredient 2"] (a list of strings), 
         "cuisine": "Appropriate Cuisine Type" (a string), 
@@ -37,8 +41,6 @@ system_prompt = """
         "is_vegan": "Yes" if there are only vegan-compliant ingredients/"No" if there are one or more non-vegan ingredients (a string)
         }
 """
-class RecipeRequest(BaseModel):
-    ingredients: str
 
 @app.post("/transcribe")
 async def transcribe_audio(file: UploadFile = File(...)):
@@ -101,6 +103,11 @@ async def extract_json(string, counter=0):
     return {}  # Return empty dictionary if no valid JSON found
 
     
+class RecipeRequest(BaseModel):
+    ingredients: str
+    is_vegetarian: bool = False
+    is_vegan: bool = False
+
 @app.post("/generate_recipe")
 async def generate_recipe(request: RecipeRequest):
     ingredients = request.ingredients
@@ -109,8 +116,6 @@ async def generate_recipe(request: RecipeRequest):
     temperature = 0.5
     previous_response = []
     num_recipes = 3
-    is_vegetarian = False
-    is_vegan = False
     top_p = 1
     max_tokens = 1500
 
@@ -199,3 +204,16 @@ async def fixer_agent(request: FixRequest):
     result = await extract_json(fin_string, request.counter + 1)
     return FixResponse(result=result, counter=request.counter + 1)
 
+@app.post("/generate_image")
+async def generate_image(prompt):
+    api_url = "https://visioncraft.top"
+    api_key = "bb3db669-c19d-4770-a333-ca184416ad50"
+    data = {
+        "model": 'ExtraRealisticXL-v1',
+        "prompt": prompt,
+        "token": api_key
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.post(f"{api_url}/sd", json=data) as response:
+            image = await response.read()
+            return image

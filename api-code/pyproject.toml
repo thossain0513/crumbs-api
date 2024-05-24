@@ -16,6 +16,8 @@ pydantic = "^2.7.1"
 openai-whisper = "20231117"
 torch="2.2.2"
 tritonclient = "^2.45.0"
+asyncio = "^3.4.3"
+aiohttp = "^3.9.5"
 
 
 [tool.poetry.group.dev.dependencies]
