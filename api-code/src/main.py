@@ -11,6 +11,7 @@ from pydantic import BaseModel
 import aiohttp
 import asyncio
 import io
+import uvicorn
 
 
 
@@ -111,6 +112,8 @@ class RecipeRequest(BaseModel):
 @app.post("/generate_recipe")
 async def generate_recipe(request: RecipeRequest):
     ingredients = request.ingredients
+    is_vegan = request.is_vegan
+    is_vegetarian = request.is_vegetarian
 
     another = False  # If we want more responses, we show the previous recipes so it generates different ones
     temperature = 0.5
@@ -217,3 +220,6 @@ async def generate_image(prompt):
         async with session.post(f"{api_url}/sd", json=data) as response:
             image = await response.read()
             return image
+        
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)
