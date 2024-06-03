@@ -12,13 +12,14 @@ import aiohttp
 import asyncio
 import io
 import uvicorn
+from openai import OpenAI
 
-
-
-app = FastAPI()
 model_name = "meta/meta-llama-3-70b-instruct"
 image_model = "stability-ai/stable-diffusion:ac732df83cea7fff18b8472768c88ad041fa750ff7682a21affe81863cbe77e4"
 os.environ["REPLICATE_API_TOKEN"] = "r8_dzkkqN96nqOQC7YhTNJ2gUam62Cu38z4aMu9S"
+os.environ["OPENAI_API_KEY"] = "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"
+client = OpenAI()
+app = FastAPI()
 
 # Load your Whisper model (ensure the model is loaded outside the request scope to save resources)
 model = whisper.load_model("base")
@@ -26,7 +27,7 @@ model = whisper.load_model("base")
 system_prompt = """
         You are a creative chef that can generate recipes in a JSON format. 
         Make it with the following structure exactly so that we can parse the string properly. 
-        Make sure to only include ingredients that we use. 
+        Make sure to only include ingredients that we use. Make sure to include quantities.
         You don't need to include all the ingredients to generate the recipe if you don't need to.
         Make sure to pay attention to correctly label the dietary identification of the recipe based on the ingredients used.
         You can only use raw food ingredients that are provided to you in the prompt. Assume freedom with the spices.
@@ -100,7 +101,7 @@ async def extract_json(string, counter=0):
             # Handle invalid JSON
             print(f"Invalid JSON: {json_string}")  # Use fixer LLM agent to deal with invalid inputs, THIS IS KEY
             if counter < 3:  # Ensure we only attempt fixing once more
-                fixed_json = await fixer_agent(json_string, counter + 1)
+                fixed_json = await fixer_agent(FixRequest(json_string, counter + 1))
                 return fixed_json
     return {}  # Return empty dictionary if no valid JSON found
 
@@ -124,7 +125,7 @@ async def generate_recipe(request: RecipeRequest):
     max_tokens = 1500
 
     if another:
-        prompt = f"""Here are my ingredients. {ingredients}.
+        prompt = f"""Here are my ingredients: {ingredients}.
             Here are the previous {num_recipes} recipes you generated: {[recipe['name'] for recipe in previous_response]}.
             Generate another {num_recipes} recipes for me based on the previous conversation."""
     else:
@@ -136,22 +137,24 @@ async def generate_recipe(request: RecipeRequest):
         prompt = "I am vegetarian. " + prompt
     elif is_vegan:
         prompt = "I am vegan. " + prompt
-
     input = {
-        "top_p": top_p,
-        "prompt": system_prompt + prompt,
+        "model": "gpt-3.5-turbo",
+        "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}],
         "temperature": temperature,
-        "system_prompt": system_prompt,
-        "frequency_penalty": 0.5,
-        "repetition_penalty": 1,
+        "top_p": top_p,
         "max_tokens": max_tokens,
+        "frequency_penalty": 0,
+        "presence_penalty": 0
     }
 
-    fin_string = ""
-    for event in replicate.stream(model_name, input=input):
-        fin_string += str(event)
+    try:
+        response = client.chat.completions.create(**input)
+        fin_string = response.choices[0].message.content
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
     recipes = await extract_jsons(fin_string)
+    print(recipes)
     return recipes
 
 class FixRequest(BaseModel):
@@ -186,24 +189,26 @@ async def fixer_agent(request: FixRequest):
         "is_vegetarian": "Yes" if there are no animal-based ingredients/ "No" if there are animal-based ingredients (a string),
         "is_vegan": "Yes" if there are only vegan-compliant ingredients/"No" if there are one or more non-vegan ingredients (a string)
     }}
-    
-    Here is the string that I want fixed:
-    {request.fix}
     """
 
+    user_prompt = f"""Here is the string that I want fixed:
+    {request.fix}"""
+
     input = {
-        "top_p": top_p,
-        "prompt": fixer_prompt,
+        "model": "gpt-3.5-turbo",
+        "messages": [{"role": "system", "content": fixer_prompt}, {"role": "user", "content": user_prompt}],
         "temperature": temperature,
-        "system_prompt": fixer_prompt,
-        "frequency_penalty": 0.5,
-        "repetition_penalty": 1,
+        "top_p": top_p,
         "max_tokens": max_tokens,
+        "frequency_penalty": 0,
+        "presence_penalty": 0
     }
 
-    fin_string = ""
-    async for event in replicate.stream(model_name, input=input):
-        fin_string += str(event)
+    try:
+        response = client.chat.completions.create(**input)
+        fin_string = response.choices[0].message.content
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
     result = await extract_json(fin_string, request.counter + 1)
     return FixResponse(result=result, counter=request.counter + 1)
@@ -213,7 +218,7 @@ class ImageRequest(BaseModel):
     recipeDescription: str
 
 @app.post("/generate_image")
-async def generate_image(request: ImageRequest):
+def generate_image(request: ImageRequest):
     prompt = f"{request.recipeName}: {request.recipeDescription}"
     input = {
     "prompt": prompt,
@@ -225,6 +230,7 @@ async def generate_image(request: ImageRequest):
         input=input
     )
     return output
+        
         
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
