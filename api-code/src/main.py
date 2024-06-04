@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.responses import JSONResponse, StreamingResponse
 import whisper
 import os
@@ -13,6 +13,9 @@ import asyncio
 import io
 import uvicorn
 from openai import OpenAI
+from PIL import Image
+import re
+import base64
 
 model_name = "meta/meta-llama-3-70b-instruct"
 image_model = "stability-ai/stable-diffusion:ac732df83cea7fff18b8472768c88ad041fa750ff7682a21affe81863cbe77e4"
@@ -230,6 +233,62 @@ def generate_image(request: ImageRequest):
         input=input
     )
     return output
+
+
+def extract_contents_from_brackets(response_text):
+    pattern = re.compile(r'\[(.*?)\]')
+    contents = pattern.findall(response_text)
+    cleaned_contents = [','.join(re.findall(r'[a-zA-Z ]+', content)) for content in contents]
+    cleaned_contents = [content for content in cleaned_contents if content and re.search(r'[a-zA-Z]', content)]
+
+    return cleaned_contents
+
+class PhotoInput(BaseModel):
+    file: str  # Assuming this will be a base64 string or a URL to the image
+
+@app.post("/analyze")
+async def analyze(photo: PhotoInput):
+    analyzer_prompt = """
+    You identify food ingredients in the provided images. You list them in a python string list format so it can be easily parsed. 
+    If there are no food ingredients in the provided image, return an empty list.
+    """
+
+
+    # Define the input parameters for the API call
+    input_params = {
+        "model": "gpt-4o",
+        "messages": [
+            {"role": "system", "content": analyzer_prompt},
+            {
+                "role": "user",
+                "content": [
+                {
+                    "type": "text",
+                    "text": "What ingredients are in this image?"
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": photo.file
+                    }
+                }
+            ]
+            }
+        ],
+        "temperature": 0.1,
+        "max_tokens": 1500,
+        "top_p": 1,
+        "frequency_penalty": 0,
+        "presence_penalty": 0
+    }
+
+    # Make OpenAI API call for image analysis using GPT-4V
+    response = client.chat.completions.create(**input_params)
+
+    # Extract the contents from the response within square brackets
+    ingredients_list = extract_contents_from_brackets(response.choices[0].message.content)
+
+    return {"ingredients": ingredients_list}
         
         
 if __name__ == "__main__":
