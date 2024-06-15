@@ -27,7 +27,7 @@ client = OpenAI()
 
 
 app = FastAPI()
-app.mount("/lab", audio_app)
+app.mount("/audio", audio_app)
 
 
 system_prompt = """
