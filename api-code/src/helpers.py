@@ -1,4 +1,8 @@
 import re
+import random
+
+def get_random_int(min_val = 0, max_val = 1000):
+    return random.randint(min_val, max_val)
 
 
 def extract_and_clean_text(input_string):

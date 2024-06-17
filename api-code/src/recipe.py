@@ -7,23 +7,43 @@ from typing import List, Dict, Any, Optional
 import json
 from langchain_community.llms import Replicate
 import shutil
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import aiohttp
 import asyncio
 import io
 import uvicorn
 from openai import OpenAI
-from PIL import Image
 import re
 import base64
 import datetime
 from src.audio_app import app as audio_app
+from concurrent.futures import ThreadPoolExecutor
+from src.helpers import extract_and_clean_text, get_random_int
+import uuid
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+logger.setLevel(logging.INFO)
+
+formatter = logging.Formatter('%(message)s')  # Format to include only the message
+
+# Remove existing handlers to avoid duplicate logs in certain environments
+for handler in logger.handlers[:]:
+    logger.removeHandler(handler)
+
+# Add a new StreamHandler with the specified format
+stream_handler = logging.StreamHandler()
+stream_handler.setFormatter(formatter)
+logger.addHandler(stream_handler)
 
 
 model_name = "meta/meta-llama-3-70b-instruct"
 image_model = "stability-ai/stable-diffusion:ac732df83cea7fff18b8472768c88ad041fa750ff7682a21affe81863cbe77e4"
 os.environ["REPLICATE_API_TOKEN"] = "r8_dzkkqN96nqOQC7YhTNJ2gUam62Cu38z4aMu9S"
 os.environ["OPENAI_API_KEY"] = "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"
+
 client = OpenAI()
 
 app = FastAPI()
@@ -44,13 +64,14 @@ system_prompt = """
         "prepTime": "prep time (in minutes)" (a string),
         "servings": servings (integer),
         "is_vegetarian": "Yes" if there are no animal-based ingredients/ "No" if there are animal-based ingredients (a string),
-        "is_vegan": "Yes" if there are only vegan-compliant ingredients/"No" if there are one or more non-vegan ingredients (a string)
+        "is_vegan": "Yes" if there are only vegan-compliant ingredients/"No" if there are one or more non-vegan ingredients (a string),
+        "tags": ["List", "of", "tags"] (a list of strings)
         }
 """
 
 #### Helper Functions #####################################################
 
-async def extract_json(string, counter=0):
+def extract_json(string, counter=0):
     if '{' in string and '}' in string:
         start_index = string.index('{')
         end_index = string.index('}') + 1
@@ -61,7 +82,7 @@ async def extract_json(string, counter=0):
             # Handle invalid JSON
             print(f"Invalid JSON: {json_string}")  # Use fixer LLM agent to deal with invalid inputs, THIS IS KEY
             if counter < 3:  # Ensure we only attempt fixing once more
-                fixed_json = await fixer_agent(FixRequest(json_string, counter + 1))
+                fixed_json = fixer_agent(FixRequest(json_string, counter + 1))
                 return fixed_json
     return {}  # Return empty dictionary if no valid JSON found
 
@@ -91,6 +112,10 @@ class RecipeRequest(BaseModel):
     ingredients: str
     is_vegetarian: bool = False
     is_vegan: bool = False
+    seed: int
+
+    class Config:
+        arbitrary_types_allowed = True
 
 class RecipeStorage(BaseModel): #Pydantic model to store recipe information
     name: str
@@ -103,12 +128,14 @@ class RecipeStorage(BaseModel): #Pydantic model to store recipe information
     is_vegetarian: str
     is_vegan: str
     image: Optional[str] = None
+    tags: List[str]
 
 @app.post("/generate_single_recipe", response_model=RecipeStorage)
-async def generate_single_recipe(request: RecipeRequest, index: int):
+def generate_single_recipe(request: RecipeRequest):
     ingredients = request.ingredients
     is_vegan = request.is_vegan
     is_vegetarian = request.is_vegetarian
+    index = request.seed
 
     temperature = 0.5
     top_p = 1
@@ -139,10 +166,25 @@ async def generate_single_recipe(request: RecipeRequest, index: int):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    recipe = await extract_json(fin_string)
+    recipe = extract_json(fin_string)
+    logger.info(f"recipe: {recipe}")
     image = ImageRequest(recipeName = recipe['name'], recipeDescription = recipe['description'])
     recipe['image'] = generate_image(image)
     return RecipeStorage(**recipe)
+
+
+class MultRequest(BaseModel):
+    req: List[RecipeRequest]
+
+@app.post("/generate_recipes", response_model=List[RecipeStorage])
+def generate_multiple_recipes(request: MultRequest):
+    args_list = request.req
+    with ThreadPoolExecutor() as executor:
+        results = list(executor.map(generate_single_recipe, args_list))
+    
+    logger.info(f"fin results: {results}")
+
+    return results
 
 
 #### Fixer Agent Stuff #########################################################################
@@ -156,7 +198,7 @@ class FixResponse(BaseModel):
     counter: int
 
 @app.post("/fix", response_model=FixResponse)
-async def fixer_agent(request: FixRequest):
+def fixer_agent(request: FixRequest):
     if request.counter > 2:
         return FixResponse(result={}, counter=request.counter)
 
@@ -200,7 +242,65 @@ async def fixer_agent(request: FixRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    result = await extract_json(fin_string, request.counter + 1)
+    result = extract_json(fin_string, request.counter + 1)
     return FixResponse(result=result, counter=request.counter + 1)
+
+#### Analysis Script #################################################################
+
+class PhotoInput(BaseModel):
+    file: str  # Assuming this will be a base64 string or a URL to the image
+    num_recipes: int
+
+class analyzeResponse(BaseModel):
+    recipes: List[RecipeStorage]
+
+@app.post("/analyze", response_model=analyzeResponse)
+async def analyze(photo: PhotoInput):
+    analyzer_prompt = """
+    You identify food ingredients in the provided images. You list them in a python string list format so it can be easily parsed. 
+    If there are no food ingredients in the provided image, return an empty list.
+    """
+
+
+    # Define the input parameters for the API call
+    input_params = {
+        "model": "gpt-4o",
+        "messages": [
+            {"role": "system", "content": analyzer_prompt},
+            {
+                "role": "user",
+                "content": [
+                {
+                    "type": "text",
+                    "text": "What food ingredients are in this image?"
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": photo.file
+                    }
+                }
+            ]
+            }
+        ],
+        "temperature": 0.1,
+        "max_tokens": 500,
+        "top_p": 1,
+        "frequency_penalty": 0,
+        "presence_penalty": 0
+    }
+
+    # Make OpenAI API call for image analysis using GPT-4V
+    response = client.chat.completions.create(**input_params)
+    chat = extract_and_clean_text(response.choices[0].message.content)
+    reqs = []
+    for _ in range(photo.num_recipes):
+        reqs.append(RecipeRequest(ingredients=chat, seed=get_random_int()))
+    
+    recipe_req_input = MultRequest(req=reqs)
+    fin_recipes = generate_multiple_recipes(request=recipe_req_input)
+    response = analyzeResponse(recipes=fin_recipes)
+    logger.info(f"response: {response}")
+    return response
 
 
