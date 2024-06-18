@@ -15,3 +15,12 @@ def extract_and_clean_text(input_string):
         return cleaned_text
     else:
         return " "  # Return None if no match is found
+    
+def transform_string(input_string):
+    # Convert the string to lowercase
+    transformed_string = input_string.lower()
+    
+    # Replace spaces with underscores
+    transformed_string = transformed_string.replace(' ', '_')
+    
+    return transformed_string

@@ -1,56 +1,38 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.responses import JSONResponse
-import whisper
+from fastapi import FastAPI, HTTPException
+import httpx
+from io import BytesIO
+from PIL import Image
 import os
-import replicate
-from typing import List, Dict, Any
-import json
-from pydantic import BaseModel
-import shutil
-from openai import OpenAI
-import re
+from supabase import create_client, Client
 import uvicorn
-import asyncio
+from pydantic import BaseModel
+from typing import List
+import logging
+import requests
+from src.helpers import transform_string
+from io import BytesIO
 
-system_prompt = """
-        You are a creative chef that can generate recipes in a JSON format. 
-        Make it with the following structure exactly so that we can parse the string properly. 
-        Make sure to only include ingredients that we use. Make sure to include quantities.
-        You don't need to include all the ingredients to generate the recipe if you don't need to.
-        Make sure to pay attention to correctly label the dietary identification of the recipe based on the ingredients used.
-        You can only use raw food ingredients that are provided to you in the prompt. Assume freedom with the spices.
-        Make sure the recipes are reasonable to make and are edible.
-        You will only recommend recipes strictly in this following format with no inconsistencies so that a python function 
-        can properly parse it as a dictionary:
-        
-        { "name": "Name of the Recipe" (Python String),
-         "ingredients": ["ingredient", "ingredient"] (a list of strings with their quantities),  
-        "description": "A brief description, incorporating the listed ingredients with their quantities" (a string), 
-        "instructions": ["Step 1: Description with Quantity of Used Ingredient 1", "Step 2: Description with Quantity of Used Ingredient 2"] (a list of strings), 
-        "cuisine": "Appropriate Cuisine Type" (a string), 
-        "prepTime": "prep time (in minutes)" (a string),
-        "servings": servings (integer),
-        "is_vegetarian": "Yes" if there are no animal-based ingredients/ "No" if there are animal-based ingredients (a string),
-        "is_vegan": "Yes" if there are only vegan-compliant ingredients/"No" if there are one or more non-vegan ingredients (a string)
-        }
-"""
 
-fixer_prompt = """
-    You are a fixer LLM Agent. I will give you strings that can't be parsed into JSON purely from their string format,
-    I want only the JSON format with no commented out parts and perfectly parsable using json.loads. I want them in a JSON format strictly in the following
-    structure so that I can use Python to parse it into a JSON format the following way:
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-    { "name": "Name of the Recipe" (Python String),
-         "ingredients": ["ingredient", "ingredient"] (a list of strings),  
-        "description": "A brief description, incorporating the listed ingredients with their quantities" (a string), 
-        "instructions": ["Step 1: Description with Quantity of Used Ingredient 1", "Step 2: Description with Quantity of Used Ingredient 2"] (a list of strings), 
-        "cuisine": "Appropriate Cuisine Type" (a string), 
-        "prepTime": "prep time (in minutes)" (a string),
-        "servings": servings (integer),
-        "is_vegetarian": "Yes" if there are no animal-based ingredients/ "No" if there are animal-based ingredients (a string),
-        "is_vegan": "Yes" if there are only vegan-compliant ingredients/"No" if there are one or more non-vegan ingredients (a string)
-    }
-    """
+logger.setLevel(logging.INFO)
+
+formatter = logging.Formatter('%(message)s')  # Format to include only the message
+
+# Remove existing handlers to avoid duplicate logs in certain environments
+for handler in logger.handlers[:]:
+    logger.removeHandler(handler)
+
+# Add a new StreamHandler with the specified format
+stream_handler = logging.StreamHandler()
+stream_handler.setFormatter(formatter)
+logger.addHandler(stream_handler)
+
+url = "https://bwnhavvhadbgqhldazvs.supabase.co"
+key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ3bmhhdnZoYWRiZ3FobGRhenZzIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTcxNjc1NTk1NSwiZXhwIjoyMDMyMzMxOTU1fQ.Y25tTkfBdQgFhkbIJhdK9QApXUP3EZhAL6Xka0p_7xM"
+supabase: Client = create_client(url, key)
+os.environ["REPLICATE_API_TOKEN"] = "r8_dzkkqN96nqOQC7YhTNJ2gUam62Cu38z4aMu9S"
 
 
 app = FastAPI()
@@ -68,6 +50,48 @@ class RecipeStorage(BaseModel): #Pydantic model to store recipe information
     is_vegan: str
     image: str
 
+class UploadImageRequest(BaseModel):
+    image_url: str
+
+def make_bucket(name):
+    logger.info(list(supabase.storage.list_buckets()))
+    if name not in [item.name for item in supabase.storage.list_buckets()]:
+        supabase.storage.create_bucket(name = name, id = name)
+    logger.info(f"buckets: {supabase.storage.list_buckets()}")
+
+def change_bucket(name, difference):
+    logger.info(list(supabase.storage.list_buckets()))
+    if name not in [item.name for item in supabase.storage.list_buckets()]:
+        supabase.storage.create_bucket(name = name, id = name)
+        supabase.storage.update_bucket(name, difference)
+    logger.info(f"buckets: {supabase.storage.list_buckets()}")
+
+@app.post("/upload_image")
+async def upload_image(request: RecipeStorage):
+    # Fetch the image from the URL
+    image_url = request.image
+    make_bucket("recipe_images")
+    change_bucket("recipe_images", {"public": True})
+
+    logger.info(f"image url: {image_url}")
+    try:
+        response = requests.get(image_url).content
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=400, detail=f"Error fetching image: {str(e)}")
+
+   
+    file_path = f"public/{transform_string(request.name)}.png"
+
+    # Upload the image to Supabase storage
+    try:
+        res = supabase.storage.from_("recipe_images").upload(file_path, BytesIO(response).read(), file_options={"content-type": 'image/png'})
+        logger.info("passed the storage input")
+        if res.status_code != 200:
+            raise HTTPException(status_code=400, detail="Error uploading image to Supabase")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+    return {"message": "Image uploaded successfully", "file_path": file_path}
 
 
 

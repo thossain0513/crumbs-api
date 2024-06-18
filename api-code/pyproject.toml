@@ -18,6 +18,7 @@ torch="2.2.2"
 tritonclient = "^2.45.0"
 asyncio = "^3.4.3"
 aiohttp = "^3.9.5"
+supabase = "^2.5.1"
 
 
 [tool.poetry.group.dev.dependencies]
