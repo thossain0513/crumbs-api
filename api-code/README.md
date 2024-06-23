@@ -1,4 +1,4 @@
-# Lab 1: Containerizing a Basic API
+# Crumbs API
 
 ## Overview 
 
@@ -6,7 +6,8 @@ This project is a FastAPI application that uses Poetry to manage project depende
 test its functionalities, and is containerized with Docker to provide the following endpoints:
 
 - `/generate-recipe`: A POST endpoint returning recipe information in a JSON format.
-- `/transcribe-audio`: A POST endpoint that takes a query parameter `audio` and returns a JSON message with a string input of the .
+- `/transcribe-audio`: A POST endpoint that takes a file parameter `audio` and returns a JSON message with a string input of the transcription.
+- `/generate_image`: A POST endpoint that uses the [Replicate](https://replicate.com/stability-ai/stable-diffusion) image generation API to generate recipe images for the Crumbs App.
 - `/`: A root endpoint that returns a “Not Found” response.
 - `/docs`: An endpoint that provides a browsable documentation while the API is running.
 - `/openapi.json`: Returns a JSON object that meets the OpenAPI specification version 3+.
@@ -38,11 +39,11 @@ Poetry to your PATH.
 
 1. **Clone the Repository:**
    ```bash
-   git clone https://github.com/UCB-W255/lab1-containerizing-a-basic-api-ashoksun01.git
-
+   git clone https://github.com/thossain0513/crumbs-api.git
+ 
 2. **Navigate to Project Directory:**
    ```bash
-   cd lab1-containerizing-a-basic-api-ashoksun01/lab1
+   cd api-code
 
 3. **Install Project Dependencies:**
    ```bash
@@ -74,10 +75,10 @@ by following the instructions at [Docker Installation Guide](https://docs.docker
 
 1. **Clone the Repository:**
    ```bash
-   git clone https://github.com/UCB-W255/lab1-containerizing-a-basic-api-ashoksun01.git
+   git clone https://github.com/thossain0513/crumbs-api.git
 2. **Navigate to Project Directory:**
    ```bash
-   cd lab1-containerizing-a-basic-api-ashoksun01/lab1
+   cd api-code
 3. **Build Docker Image:**
    ```bash
    docker build -t <docker-image> .

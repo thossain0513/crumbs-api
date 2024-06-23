@@ -19,6 +19,7 @@ app = FastAPI()
 app.mount("/audio", audio_app)
 app.mount("/recipe", recipe_app)
 app.mount("/database", database_app)
+model_name = "meta/meta-llama-3-70b-instruct"
 
 
 @app.get("/health")
