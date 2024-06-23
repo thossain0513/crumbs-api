@@ -10,10 +10,10 @@ from src.audio_app import app as audio_app
 from src.helpers import extract_and_clean_text
 from src.recipe import app as recipe_app
 from src.database_app import app as database_app
+from dotenv import load_dotenv
+
 
 image_model = "stability-ai/stable-diffusion:ac732df83cea7fff18b8472768c88ad041fa750ff7682a21affe81863cbe77e4"
-os.environ["REPLICATE_API_TOKEN"] = "r8_dzkkqN96nqOQC7YhTNJ2gUam62Cu38z4aMu9S"
-os.environ["OPENAI_API_KEY"] = "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"
 
 app = FastAPI()
 app.mount("/audio", audio_app)
